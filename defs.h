@@ -186,10 +186,15 @@ void switchuvm(struct proc *);
 void switchkvm(void);
 int copyout(pde_t *, uint, void *, uint);
 void clearpteu(pde_t *pgdir, char *uva);
-int mencrypt(char *, int);
-int getpgtable(struct pt_entry *, int num);
-int dump_rawphymem(uint, char *);
-int decrypt(char *);
+// int mencrypt(char *, int);
+// int getpgtable(struct pt_entry *, int num);
+// int dump_rawphymem(uint, char *);
+// int decrypt(char *);
+int mencrypt(char *virtual_addr, int len);
+int getpgtable(struct pt_entry *entries, int num);
+int dump_rawphymem(uint physical_addr, char *buffer);
+int decrypt(char *uva);
+pte_t *walkpgdir(pde_t *pgdir, const void *va, int alloc);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x) / sizeof((x)[0]))

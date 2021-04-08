@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+#include "ptentry.h"
 
 int sys_fork(void)
 {
@@ -88,26 +89,54 @@ int sys_mencrypt(void)
 {
   // return mencrypt();
   // unimplemented placeholder
-  return -1;
+  // return -1;
+
+  char *virtual_addr;
+  int len;
+  if (argint(1, &len) < 0)
+    return -1;
+  if (len == 0)
+    return 0;
+  if (argptr(0, (void *)&virtual_addr, sizeof(char *)) < 0)
+    return -1;
+  return mencrypt(virtual_addr, len);
 }
 
 int sys_getpgtable(void)
 {
   // return getpgtable();
   // unimplemented placeholder
-  return -1;
+  // return -1;
+  struct pt_entry *entries;
+  int num;
+  if (argint(1, &num) < 0)
+    return -1;
+  if (argptr(0, (void *)&entries, sizeof(entries[0]) * num) < 0)
+    return -1;
+  return getpgtable(entries, num);
 }
 
 int sys_dump_rawphymem(void)
 {
   // return dump_rawphymem();
   // unimplemented placeholder
-  return -1;
+  // return -1;
+  int physical_addr;
+  char *buffer;
+  if (argint(0, &physical_addr) < 0)
+    return -1;
+  if (argptr(1, (void *)&buffer, sizeof(buffer[0]) * PGSIZE) < 0)
+    return -1;
+  return dump_rawphymem((uint)physical_addr, buffer);
 }
 
 int sys_decrypt(void)
 {
   // return decrypt();
   // unimplemented placeholder
-  return -1;
+  // return -1;
+  char *uva;
+  if (argptr(0, &uva, sizeof(char *)) < 0)
+    return -1;
+  return decrypt((char *)uva);
 }

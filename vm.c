@@ -32,7 +32,8 @@ void seginit(void)
 // Return the address of the PTE in page table pgdir
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page table pages.
-static pte_t *
+// static
+pte_t *
 walkpgdir(pde_t *pgdir, const void *va, int alloc)
 {
   pde_t *pde;
@@ -72,9 +73,13 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
   {
     if ((pte = walkpgdir(pgdir, a, 1)) == 0)
       return -1;
-    if (*pte & PTE_P)
+    if (*pte & PTE_P || (!(*pte & PTE_P) && *pte & PTE_E))
       panic("remap");
     *pte = pa | perm | PTE_P;
+    if (perm & PTE_E && !(perm & PTE_P))
+    {
+      *pte &= ~(PTE_P);
+    }
     if (a == last)
       break;
     a += PGSIZE;
@@ -270,7 +275,7 @@ int deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     pte = walkpgdir(pgdir, (char *)a, 0);
     if (!pte)
       a = PGADDR(PDX(a) + 1, 0, 0) - PGSIZE;
-    else if ((*pte & PTE_P) != 0)
+    else if ((*pte & PTE_P) != 0 || ((*pte & PTE_P) == 0 && (*pte & PTE_E) != 0))
     {
       pa = PTE_ADDR(*pte);
       if (pa == 0)
@@ -294,7 +299,7 @@ void freevm(pde_t *pgdir)
   deallocuvm(pgdir, KERNBASE, 0);
   for (i = 0; i < NPDENTRIES; i++)
   {
-    if (pgdir[i] & PTE_P)
+    if (pgdir[i] & PTE_P || (!(pgdir[i] & PTE_P) && pgdir[i] & PTE_E))
     {
       char *v = P2V(PTE_ADDR(pgdir[i]));
       kfree(v);
@@ -331,7 +336,7 @@ copyuvm(pde_t *pgdir, uint sz)
   {
     if ((pte = walkpgdir(pgdir, (void *)i, 0)) == 0)
       panic("copyuvm: pte should exist");
-    if (!(*pte & PTE_P))
+    if (!(*pte & PTE_P) && !(*pte & PTE_E))
       panic("copyuvm: page not present");
     pa = PTE_ADDR(*pte);
     flags = PTE_FLAGS(*pte);
@@ -359,7 +364,7 @@ uva2ka(pde_t *pgdir, char *uva)
   pte_t *pte;
 
   pte = walkpgdir(pgdir, uva, 0);
-  if ((*pte & PTE_P) == 0)
+  if ((*pte & PTE_P) == 0 && (*pte & PTE_E) == 0)
     return 0;
   if ((*pte & PTE_U) == 0)
     return 0;
@@ -401,21 +406,207 @@ int copyout(pde_t *pgdir, uint va, void *p, uint len)
 
 int mencrypt(char *virtual_addr, int len)
 {
-  // unimplemented placeholder
-  return -1;
+  // cprintf("mencrypt begining...\n");
+  // error checking
+  if (len < 0)
+    return -1;
+  if (len == 0)
+    return 0;
+  if ((uint)uva2ka(myproc()->pgdir, (char *)PGROUNDDOWN((int)virtual_addr) + len * PGSIZE) > KERNBASE + PHYSTOP)
+    return -1;
+  if ((uint)uva2ka(myproc()->pgdir, (char *)PGROUNDDOWN((int)virtual_addr)) < KERNBASE)
+    return -1;
+
+  uint first = PGROUNDDOWN((uint)virtual_addr);               // first page to encrypt
+  uint last = PGROUNDDOWN((uint)virtual_addr) + len * PGSIZE; // last page (not included)
+
+  for(uint a = first; a < last; a += PGSIZE) {
+      if(uva2ka(myproc()->pgdir, (void*) a) == 0)
+        return -1;
+  }
+
+  // cprintf("virtual addr: %d\n", (uint)virtual_addr);
+  // cprintf("len: %d\n", len);
+  // cprintf("first: %d\n", first);
+  // cprintf("last: %d\n", last);
+  // cprintf("\n\n");
+
+  int count = 0;
+  int encrypt = 0;
+  for (int page_i = 0; page_i < myproc()->sz; page_i += PGSIZE)
+  {
+    if ((uint)page_i == first) // last found
+      encrypt = 1;             // now flag to start encrypting
+    if ((uint)page_i == last)  // first found
+      encrypt = 0;             // now flag to stop encrypting
+    // cprintf("checking for page addr %d\n", page_i);
+    pte_t *pte = walkpgdir(myproc()->pgdir, (void *)page_i, 0);
+
+    // uint pd = PGROUNDDOWN((uint)page_i); // first page to encrypt
+    // uint pu = PGROUNDUP((uint)page_i);   // last page (not included)
+
+    // cprintf("page: %d\tE: %d\tP: %d\n", page_i, ((*pte) & PTE_E), ((*pte) & PTE_P));
+    // cprintf("page: %d\tpd: %d\tpu: %d\tE: %d\tP: %d\n", page_i, pd, pu, ((*pte) & PTE_E), ((*pte) & PTE_P));
+    // encrypt IF flagged (start at false)
+    if (encrypt)
+    {
+      // cprintf("try to encrpyt\n");
+      // cprintf("e\n");
+      // walkpgdir() returns a pte_t that contains pa
+      if ((*pte) & PTE_P) // test PTE_P bit is set; I want to check if encrypt here eventually
+      {
+        // cprintf("encrypting...\n");
+        char *kva = uva2ka(myproc()->pgdir, (void *)page_i);
+        if (kva == 0)
+          return 0;
+
+        for (int i = 0; i < PGSIZE; ++i)
+          *(kva + i) ^= 0xFF;
+
+        *pte = (*pte) | PTE_E;    // set PTE_E bit
+        *pte = (*pte) & (~PTE_P); // clear PTE_P bit
+        switchuvm(myproc());      // flush the TLB after modifying the page table
+      }
+    }
+    count++;
+  }
+
+  return 0;
 }
+
 int getpgtable(struct pt_entry *entries, int num)
 {
-  // unimplemented placeholder
-  return -1;
+  int count = 0;
+  int n = ((myproc()->sz - PGSIZE) / PGSIZE); // skip 1
+  if (entries == 0)
+    return -1;
+  for (int pg_i = n; pg_i >= 0 && count < num;count++, pg_i--)
+  {
+    char *page = (char *)(pg_i << 12);
+    pte_t *pte = walkpgdir(myproc()->pgdir, page, 0);
+
+    if ((!pte) || (!(*pte & PTE_P) && !(*pte & PTE_E)))
+      continue;
+
+    entries[count].pdx = pg_i >> 10;
+    entries[count].ptx = pg_i & (1024 - 1);
+    entries[count].ppage = V2P(uva2ka(myproc()->pgdir, page)) >> 12;
+    if (*pte & PTE_P) // PTE_E bit is set
+      entries[count].present = 1;
+    else
+      entries[count].present = 0;
+    if (*pte & PTE_W) // PTE_E bit is set
+      entries[count].writable = 1;
+    else
+      entries[count].writable = 0;
+    if (*pte & PTE_E) // PTE_E bit is set
+      entries[count].encrypted = 1;
+    else
+      entries[count].encrypted = 0;
+  }
+  return count;
 }
+
+// OLD
+// int getpgtable(struct pt_entry *entries, int num)
+// {
+//   if (entries == 0)
+//     return -1;
+//   int i = 0;
+//   for (int page_i = myproc()->sz - PGSIZE; page_i + 1 > 0; page_i -= PGSIZE)
+//   {
+//     if (i > num)
+//     {
+//       return num;
+//     }
+//     pte_t *pte = walkpgdir(myproc()->pgdir, (void *)page_i, 0);
+
+//     entries[i].pdx = PDX((uint)page_i);
+//     entries[i].ptx = PTX((uint)page_i);
+//     entries[i].ppage = PTE_ADDR(*pte);
+// if ((*pte) & PTE_P) // PTE_E bit is set
+// {
+//   entries[i].present = 1;
+// }
+// else
+// {
+//   entries[i].present = 0;
+// }
+// if ((*pte) & PTE_W) // PTE_E bit is set
+// {
+//   entries[i].writable = 1;
+// }
+// else
+// {
+//   entries[i].writable = 0;
+// }
+// if ((*pte) & PTE_E) // PTE_E bit is set
+// {
+//   entries[i].encrypted = 1;
+// }
+// else
+// {
+//   entries[i].encrypted = 0;
+// }
+//     i++;
+//   }
+//   return -1;
+// }
+
 int dump_rawphymem(uint physical_addr, char *buffer)
 {
-  // unimplemented placeholder
-  return -1;
+  if (buffer == 0)
+    return -1;
+  // MANUAL
+  char *start = (char *)PGROUNDDOWN((uint)P2V(physical_addr));
+  for (int i = 0; i < PGSIZE; i++)
+    buffer[i] = start[i];
+  // return copyout(myproc()->pgdir, (uint)P2V(physical_addr), (void *)buffer, PGSIZE);
+  // return copyout(myproc()->pgdir, (uint)start, (void *)buffer, PGSIZE);
+  return 0;
 }
+
+// rewrite
 int decrypt(char *uva)
 {
   // unimplemented placeholder
+  // return -1;
+  char *uva_aligned = (char *)PGROUNDDOWN((int)uva);
+  pte_t *pte = walkpgdir(myproc()->pgdir, uva_aligned, 0);
+
+  if (pte && !(*pte & PTE_P) && (*pte & PTE_E))
+  {
+    char *kva = uva2ka(myproc()->pgdir, uva_aligned);
+    for (int i = 0; i < PGSIZE; ++i)
+      *(kva + i) ^= 0xFF;
+    *pte = (*pte) | PTE_P;    // set PTE_P bit
+    *pte = (*pte) & (~PTE_E); // clear PTE_E bit
+    return 0;
+  }
+
   return -1;
 }
+
+// OLD
+// int decrypt(uint uva)
+// {
+//   uint a = PGROUNDDOWN(uva);
+//   for (int page_i = myproc()->sz - PGSIZE; page_i + 1 > 0; page_i -= PGSIZE)
+//   {
+//     pte_t *pte = walkpgdir(myproc()->pgdir, (void *)page_i, 0);
+//     if (((uint)page_i == a) && ((*pte) & PTE_E)) // found; PTE_E bit is set
+//     {
+//       char *kva = uva2ka(myproc()->pgdir, (void *)page_i);
+//       if (kva == 0)
+//         return 0;
+      // for (int i = 0; i < PGSIZE; ++i)
+      //   *(kva + i) ^= 0xFF;
+
+//       *pte = (*pte) | PTE_P;    // set PTE_P bit
+//       *pte = (*pte) & (~PTE_E); // clear PTE_E bit
+//       switchuvm(myproc());      // flush the TLB after modifying the page table
+//       return 0;
+//     }
+//   }
+//   return -1;
+// }
