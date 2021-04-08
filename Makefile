@@ -181,7 +181,7 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
-	# _test_0\
+	_test_0\
 	_test_1\
 	_test_2\
 	_test_3\
