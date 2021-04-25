@@ -1,6 +1,6 @@
 # Memory Encryption in xv6
 
-Project for my OS class 537. Enables memory encryption.
+Project for my OS class 537. Enables memory encryption for the xv6 operating system.
 
 # xv6
 
