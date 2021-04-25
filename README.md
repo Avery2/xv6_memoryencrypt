@@ -1,6 +1,6 @@
 # Memory Encryption in xv6
 
-Project for my OS class 537. Enables memory encryption for the xv6 operating system. Required understanding virtual memory, page tables, and trap handlers. Also required modifying page table entries and the trap handler that handles page faults.
+Project for my OS class 537 (p5). Enables memory encryption for the xv6 operating system. Required understanding virtual memory, page tables, and trap handlers. Also required modifying page table entries and the trap handler that handles page faults.
 
 # xv6
 
