@@ -1,3 +1,9 @@
+# Memory Encryption in xv6
+
+Project for my OS class 537. Enables memory encryption.
+
+# xv6
+
 NOTE: we have stopped maintaining the x86 version of xv6, and switched
 our efforts to the RISC-V version
 (https://github.com/mit-pdos/xv6-riscv.git)
